@@ -1,8 +1,8 @@
 [libraries]
-yaci = "com.bloxbean.cardano:yaci:0.3.2"
-cardano-client-lib = "com.bloxbean.cardano:cardano-client-lib:0.6.0"
-cardano-client-backend = "com.bloxbean.cardano:cardano-client-backend:0.6.0"
-cardano-client-backend-ogmios = "com.bloxbean.cardano:cardano-client-backend-ogmios:0.6.0"
+yaci = "com.bloxbean.cardano:yaci:0.3.3-fae2ac4-SNAPSHOT"
+cardano-client-lib = "com.bloxbean.cardano:cardano-client-lib:0.6.2-SNAPSHOT"
+cardano-client-backend = "com.bloxbean.cardano:cardano-client-backend:0.6.2-SNAPSHOT"
+cardano-client-backend-ogmios = "com.bloxbean.cardano:cardano-client-backend-ogmios:0.6.2-SNAPSHOT"
 
 rocks-types="com.bloxbean:rocks-types:0.0.1-preview6"
 
