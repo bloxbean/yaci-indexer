@@ -1,7 +1,7 @@
 package com.bloxbean.cardano.yaci.store.governanceaggr.storage.impl;
 
 import com.bloxbean.cardano.yaci.core.model.governance.GovActionType;
-import com.bloxbean.cardano.yaci.store.governance.storage.impl.model.GovActionStatus;
+import com.bloxbean.cardano.yaci.store.common.domain.GovActionStatus;
 import com.bloxbean.cardano.yaci.store.governanceaggr.domain.GovActionProposalStatus;
 import com.bloxbean.cardano.yaci.store.governanceaggr.storage.GovActionProposalStatusStorage;
 import com.bloxbean.cardano.yaci.store.governanceaggr.storage.impl.mapper.GovActionProposalStatusMapper;
@@ -29,8 +29,14 @@ public class GovActionProposalStatusStorageImpl implements GovActionProposalStat
     }
 
     @Override
-    public Optional<GovActionProposalStatus> findLastEnactedProposal(GovActionType govActionType) {
-        return govActionProposalStatusRepository.findLastEnactedProposal(govActionType)
+    public List<GovActionProposalStatus> findByStatusListAndEpoch(List<GovActionStatus> statusList, int epoch) {
+        return govActionProposalStatusRepository.findByStatusListAndEpoch(statusList, epoch).stream()
+                .map(mapper::toGovActionProposalStatus).toList();
+    }
+
+    @Override
+    public Optional<GovActionProposalStatus> findLastEnactedProposal(GovActionType govActionType, int epoch) {
+        return govActionProposalStatusRepository.findLastEnactedProposal(govActionType, epoch)
                 .map(mapper::toGovActionProposalStatus);
     }
 }

@@ -1,5 +1,6 @@
 package com.bloxbean.cardano.yaci.store.governance.storage.impl.model;
 
+import com.bloxbean.cardano.yaci.store.common.domain.GovActionStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

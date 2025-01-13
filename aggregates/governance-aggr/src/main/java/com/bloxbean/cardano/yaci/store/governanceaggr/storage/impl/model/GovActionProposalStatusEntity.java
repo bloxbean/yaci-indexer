@@ -1,7 +1,7 @@
 package com.bloxbean.cardano.yaci.store.governanceaggr.storage.impl.model;
 
 import com.bloxbean.cardano.yaci.core.model.governance.GovActionType;
-import com.bloxbean.cardano.yaci.store.governance.storage.impl.model.GovActionStatus;
+import com.bloxbean.cardano.yaci.store.common.domain.GovActionStatus;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "gov_action_proposal_status")
 @IdClass(GovActionProposalStatusId.class)
+//todo: should add prev gov action id?
 public class GovActionProposalStatusEntity {
     @Id
     @Column(name = "gov_action_tx_hash")

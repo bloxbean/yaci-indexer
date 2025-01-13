@@ -3,7 +3,7 @@ package com.bloxbean.cardano.yaci.store.governance.storage.local.impl;
 import com.bloxbean.cardano.yaci.store.governance.domain.local.LocalGovActionProposalStatus;
 import com.bloxbean.cardano.yaci.store.governance.storage.local.LocalGovActionProposalStatusStorage;
 import com.bloxbean.cardano.yaci.store.governance.storage.impl.mapper.LocalGovActionProposalStatusMapper;
-import com.bloxbean.cardano.yaci.store.governance.storage.impl.model.GovActionStatus;
+import com.bloxbean.cardano.yaci.store.common.domain.GovActionStatus;
 import com.bloxbean.cardano.yaci.store.governance.storage.impl.repository.LocalGovActionProposalStatusRepository;
 import lombok.RequiredArgsConstructor;
 

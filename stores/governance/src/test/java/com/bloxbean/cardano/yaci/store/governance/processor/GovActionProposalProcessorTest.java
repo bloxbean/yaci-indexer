@@ -13,7 +13,6 @@ import com.bloxbean.cardano.yaci.store.events.domain.TxGovernance;
 import com.bloxbean.cardano.yaci.store.governance.domain.GovActionProposal;
 import com.bloxbean.cardano.yaci.store.governance.storage.GovActionProposalStorage;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,8 +25,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.*;
 
-import static com.bloxbean.cardano.yaci.core.model.governance.GovActionType.HARD_FORK_INITIATION_ACTION;
 import static com.bloxbean.cardano.yaci.core.model.governance.GovActionType.INFO_ACTION;
+import static com.bloxbean.cardano.yaci.core.model.governance.GovActionType.UPDATE_COMMITTEE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -43,13 +42,9 @@ class GovActionProposalProcessorTest {
 
     private GovActionProposalProcessor govActionProposalProcessor;
 
-    private ObjectMapper objectMapper;
-
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        govActionProposalProcessor = new GovActionProposalProcessor(govActionProposalStorage,
-                objectMapper);
+        govActionProposalProcessor = new GovActionProposalProcessor(govActionProposalStorage);
     }
 
     @Test
@@ -97,21 +92,11 @@ class GovActionProposalProcessorTest {
         }
 
         assertThat(govActionProposalsSaved).map(GovActionProposal::getIndex).contains(0L, 1L);
-        assertThat(govActionProposalsSaved).map(GovActionProposal::getType).contains(INFO_ACTION, HARD_FORK_INITIATION_ACTION);
+        assertThat(govActionProposalsSaved).map(GovActionProposal::getType).contains(INFO_ACTION, UPDATE_COMMITTEE);
         assertThat(govActionProposalsSaved).map(GovActionProposal::getReturnAddress).contains(
                 "stake_test1urvwycygqdv0pgs0vvjnsjt4w4934lvlu3w3vntg57w5dqgt4prgt",
                 "stake_test1upuhx0upngft6d832ds2sug76c76ynm94mehgmd4rfm4tnsxs62hr"
         );
-
-//        for (int i = 0; i < govActionProposalsSaved.size(); i++) {
-//            var govActionProposal = govActionProposalsSaved.get(i);
-//
-//            assertThat(govActionProposal.getIndex()).isEqualTo(i);
-//            assertThat(govActionProposal.getDeposit()).isEqualTo(proposalProcedures().get(i).getDeposit());
-//            assertThat(govActionProposal.getType()).isEqualTo(proposalProcedures().get(i).getGovAction().getType());
-//            assertThat(govActionProposal.getReturnAddress())
-//                    .isEqualTo(new Address(HexUtil.decodeHexString(proposalProcedures().get(i).getRewardAccount())).getAddress());
-//        }
 
         assertThat(govActionProposalsSaved.get(0).getAnchorUrl()).isEqualTo(proposalProcedures().get(0).getAnchor().getAnchor_url());
         assertThat(govActionProposalsSaved.get(0).getAnchorHash()).isEqualTo(proposalProcedures().get(0).getAnchor().getAnchor_data_hash());
@@ -121,7 +106,7 @@ class GovActionProposalProcessorTest {
         // test json
         JsonNode details = govActionProposalsSaved.get(0).getDetails();
         assertThat(details.get("type").asText())
-                .isEqualTo("HARD_FORK_INITIATION_ACTION");
+                .isEqualTo("UPDATE_COMMITTEE");
 
         JsonNode govActionIdNode = details.get("govActionId");
         assertThat(govActionIdNode.get("transactionId").asText())
@@ -136,6 +121,53 @@ class GovActionProposalProcessorTest {
                 .isEqualTo(3);
     }
 
+    @Test
+    void givenGovernanceEventWithParameterChangeAction_ShouldExcludeNullFieldsInDetails() {
+        final GovernanceEvent governanceEvent = GovernanceEvent.builder()
+                .metadata(eventMetadata())
+                .txGovernanceList(List.of(
+                        TxGovernance.builder()
+                                .txHash("1234abcd5678efgh9012ijkl3456mnop7890qrstuvwx")
+                                .proposalProcedures(List.of(
+                                        ProposalProcedure.builder()
+                                                .govAction(govAction(GovActionType.PARAMETER_CHANGE_ACTION))
+                                                .deposit(BigInteger.valueOf(1000))
+                                                .rewardAccount("E0D8E260880358F0A20F6325384975754B1AFD9FE45D164D68A79D4681")
+                                                .anchor(Anchor.builder()
+                                                        .anchor_url("https://example.com/proposal")
+                                                        .anchor_data_hash("1111222233334444555566667777888899990000aaaabbbbccccdddd")
+                                                        .build())
+                                                .build()
+                                ))
+                                .build()
+                ))
+                .build();
+
+        govActionProposalProcessor.handleGovernanceAction(governanceEvent);
+
+        verify(govActionProposalStorage, times(1)).saveAll(govActionProposalsCaptor.capture());
+
+        List<GovActionProposal> govActionProposalsSaved = govActionProposalsCaptor.getValue();
+        assertThat(govActionProposalsSaved).hasSize(1);
+
+        GovActionProposal savedProposal = govActionProposalsSaved.get(0);
+
+        assertThat(savedProposal.getTxHash()).isEqualTo("1234abcd5678efgh9012ijkl3456mnop7890qrstuvwx");
+        assertThat(savedProposal.getType()).isEqualTo(GovActionType.PARAMETER_CHANGE_ACTION);
+        assertThat(savedProposal.getAnchorUrl()).isEqualTo("https://example.com/proposal");
+        assertThat(savedProposal.getAnchorHash()).isEqualTo("1111222233334444555566667777888899990000aaaabbbbccccdddd");
+
+        JsonNode details = savedProposal.getDetails();
+
+        assertThat(details).isNotNull();
+        assertThat(details.get("protocolParamUpdate").get("minFeeA").asInt()).isEqualTo(100);
+        assertThat(details.get("protocolParamUpdate").get("minFeeB").asInt()).isEqualTo(200);
+        assertThat(details.get("protocolParamUpdate").get("keyDeposit").asText()).isEqualTo("100000000");
+        assertThat(details.get("protocolParamUpdate").has("drepVotingThresholds")).isFalse();
+        assertThat(details.get("protocolParamUpdate").has("poolVotingThresholds")).isFalse();
+        assertThat(details.get("protocolParamUpdate").has("drepDeposit")).isFalse();
+    }
+
     private EventMetadata eventMetadata() {
         return EventMetadata.builder()
                 .epochNumber(90)
@@ -148,7 +180,7 @@ class GovActionProposalProcessorTest {
     private List<ProposalProcedure> proposalProcedures() {
         return List.of(
                 ProposalProcedure.builder()
-                        .govAction(govAction(HARD_FORK_INITIATION_ACTION))
+                        .govAction(govAction(UPDATE_COMMITTEE))
                         .deposit(BigInteger.valueOf(1000))
                         .rewardAccount("E0D8E260880358F0A20F6325384975754B1AFD9FE45D164D68A79D4681")
                         .anchor(Anchor.builder()
@@ -238,14 +270,14 @@ class GovActionProposalProcessorTest {
                 .minFeeB(200)
                 .minUtxo(new BigInteger("500"))
                 .maxEpoch(200)
-                .priceMem(new BigDecimal("0.5"))
+                .priceMem(null)
                 .maxTxSize(1000)
                 .priceStep(new BigDecimal("0.01"))
                 .costModels(Collections.singletonMap(1, "model1"))
                 .keyDeposit(new BigInteger("100000000"))
                 .maxTxExMem(new BigInteger("200000"))
                 .maxValSize(500L)
-                .drepDeposit(new BigInteger("500000000"))
+                .drepDeposit(null)
                 .minPoolCost(new BigInteger("1000000"))
                 .poolDeposit(new BigInteger("1000000000"))
                 .extraEntropy(new Tuple<>(42, "entropy"))

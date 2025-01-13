@@ -62,14 +62,14 @@ create table reward
 drop table if exists reward_rest;
 create table reward_rest
 (
+    id              uuid  primary key,
     address         varchar(255),
     type            varchar(50),
     amount          numeric(38),
     earned_epoch    integer,
     spendable_epoch integer,
     slot            bigint,
-    create_datetime timestamp,
-    primary key (address, type, earned_epoch)
+    create_datetime timestamp
 );
 
 drop table if exists adapot_jobs;

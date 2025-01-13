@@ -4,6 +4,7 @@ import com.bloxbean.cardano.yaci.store.governance.storage.*;
 import com.bloxbean.cardano.yaci.store.governance.storage.impl.*;
 import com.bloxbean.cardano.yaci.store.governance.storage.impl.mapper.*;
 import com.bloxbean.cardano.yaci.store.governance.storage.impl.repository.*;
+import org.jooq.DSLContext;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
@@ -113,8 +114,9 @@ public class GovernanceStoreConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public CommitteeMemberStorage committeeMemberStorage(CommitteeMemberRepository committeeMemberRepository,
-                                                         CommitteeMemberMapper committeeMemberMapper) {
-        return new CommitteeMemberStorageImpl(committeeMemberRepository, committeeMemberMapper);
+                                                         CommitteeMemberMapper committeeMemberMapper,
+                                                         DSLContext dslContext) {
+        return new CommitteeMemberStorageImpl(committeeMemberRepository, committeeMemberMapper, dslContext);
     }
 
     @Bean

@@ -1,28 +1,24 @@
-package com.bloxbean.cardano.yaci.store.governance.domain.local;
+package com.bloxbean.cardano.yaci.store.governance.domain;
 
-import com.bloxbean.cardano.yaci.store.common.domain.GovActionStatus;
+import com.bloxbean.cardano.yaci.core.model.CredentialType;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@SuperBuilder
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public class LocalGovActionProposalStatus {
-    private String govActionTxHash;
-
-    private long govActionIndex;
-
-    private GovActionStatus status;
-
-    private Integer epoch;
-
-    private Long slot;
+public class CommitteeMemberDetails {
+    private String coldKey;
+    private String hotKey;
+    private CredentialType credType;
+    private Integer startEpoch;
+    private Integer expiredEpoch;
 }

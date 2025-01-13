@@ -18,6 +18,7 @@ import java.math.BigInteger;
 @SuperBuilder
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+// TODO: should add prevGovActionId?
 public class GovActionProposal extends BlockAwareDomain {
 
     private String txHash;

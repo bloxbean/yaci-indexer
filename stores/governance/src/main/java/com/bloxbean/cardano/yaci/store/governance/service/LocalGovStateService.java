@@ -26,7 +26,7 @@ import com.bloxbean.cardano.yaci.store.governance.annotation.LocalGovState;
 import com.bloxbean.cardano.yaci.store.governance.domain.GovActionProposal;
 import com.bloxbean.cardano.yaci.store.governance.domain.local.*;
 import com.bloxbean.cardano.yaci.store.governance.storage.GovActionProposalStorage;
-import com.bloxbean.cardano.yaci.store.governance.storage.impl.model.GovActionStatus;
+import com.bloxbean.cardano.yaci.store.common.domain.GovActionStatus;
 import com.bloxbean.cardano.yaci.store.governance.storage.local.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.Nullable;
@@ -180,7 +180,6 @@ public class LocalGovStateService {
 
         proposalStatusListToSave.addAll(getExpiredProposals(govStateQueryResult, currentEpoch, slot));
         proposalStatusListToSave.addAll(getRatifiedProposals(govStateQueryResult, currentEpoch, slot));
-        proposalStatusListToSave.addAll(getEnactedProposals(ratifiedGovActionsInPrevEpoch, govStateQueryResult, currentEpoch, slot));
         proposalStatusListToSave.addAll(getActiveProposals(govStateQueryResult, currentEpoch, slot));
 
         if (!proposalStatusListToSave.isEmpty()) {
@@ -191,11 +190,7 @@ public class LocalGovStateService {
         handleCommittee(govStateQueryResult, currentEpoch, slot);
         handleCommitteeMembers(govStateQueryResult, currentEpoch, slot);
 
-        List<GovActionId> enactedGovActionIds = proposalStatusListToSave.stream().filter(entity -> entity.getStatus().equals(GovActionStatus.ENACTED))
-                .map(entity -> GovActionId.builder()
-                        .transactionId(entity.getGovActionTxHash())
-                        .gov_action_index((int) entity.getGovActionIndex())
-                        .build()).toList();
+        List<GovActionId> enactedGovActionIds = getEnactedGovActionIds(ratifiedGovActionsInPrevEpoch,govStateQueryResult);
 
         handleTreasuryWithdrawals(enactedGovActionIds, currentEpoch, slot);
         handleHardForkInitiation(enactedGovActionIds, currentEpoch, slot);
@@ -222,10 +217,9 @@ public class LocalGovStateService {
         return proposalStatusList;
     }
 
-    private List<LocalGovActionProposalStatus> getEnactedProposals(
-            List<LocalGovActionProposalStatus> ratifiedGovActionsInPrevEpoch,
-            GovStateQueryResult govStateQueryResult, Integer currentEpoch, Long slot) {
-        List<LocalGovActionProposalStatus> proposalStatusList = new ArrayList<>();
+    private List<GovActionId> getEnactedGovActionIds(
+            List<LocalGovActionProposalStatus> ratifiedGovActionsInPrevEpoch, GovStateQueryResult govStateQueryResult) {
+        List<GovActionId> results = new ArrayList<>();
         List<GovActionId> proposalsInNextRatify = govStateQueryResult.getProposals().stream().map(Proposal::getGovActionId).toList();
 
         ratifiedGovActionsInPrevEpoch.forEach(govAction -> {
@@ -235,11 +229,11 @@ public class LocalGovStateService {
                     .build();
 
             if (govAction.getStatus().equals(GovActionStatus.RATIFIED) && !proposalsInNextRatify.contains(govActionId)) {
-                proposalStatusList.add(buildLocalGovActionProposal(govActionId, GovActionStatus.ENACTED, currentEpoch, slot));
+                results.add(govActionId);
             }
         });
 
-        return proposalStatusList;
+        return results;
     }
 
     private List<LocalGovActionProposalStatus> getActiveProposals(GovStateQueryResult govStateQueryResult, Integer currentEpoch, Long slot) {
