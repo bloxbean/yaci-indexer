@@ -10,6 +10,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigInteger;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
@@ -17,18 +18,19 @@ import java.time.LocalDateTime;
 @SuperBuilder
 @Entity
 @Table(name = "reward_rest")
-@IdClass(RewardRestId.class)
 public class RewardRestEntity {
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(name = "id", updatable = false, nullable = false)
+    private UUID id;
+
     @Column(name = "address")
     private String address;
 
-    @Id
     @Column(name = "type")
     @Enumerated(EnumType.STRING)
-    private RewardRestType type;
+    private RewardRestType type; 
 
-    @Id
     @Column(name = "earned_epoch")
     private Integer earnedEpoch;
 

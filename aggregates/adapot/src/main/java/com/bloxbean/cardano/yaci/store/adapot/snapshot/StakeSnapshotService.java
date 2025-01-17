@@ -86,7 +86,7 @@ public class StakeSnapshotService {
                                   FROM reward_rest r
                                            LEFT JOIN last_withdrawal lw ON r.address = lw.address
                                   WHERE (lw.max_slot IS NULL OR r.slot > lw.max_slot)
-                                  AND r.spendable_epoch <= :snapshot_epoch
+                                  AND r.spendable_epoch <= :epoch
                                   GROUP BY r.address
                           ),
                         PoolStatus AS (

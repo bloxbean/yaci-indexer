@@ -23,19 +23,23 @@ public class GovernanceActionUtil {
      *
      * @param govActionType
      * @param prevGovActionID
-     * @param enactedGovActionID
+     * @param lastEnactedGovActionID
      * @return
      */
     public static boolean isPrevActionAsExpected(GovActionType govActionType,
                                                  GovActionId prevGovActionID,
-                                                 GovActionId enactedGovActionID) {
+                                                 GovActionId lastEnactedGovActionID) {
         if (govActionType == GovActionType.TREASURY_WITHDRAWALS_ACTION || govActionType == GovActionType.INFO_ACTION
-                || enactedGovActionID == null) {
+                || lastEnactedGovActionID == null) {
             return true;
         }
 
-        return Objects.equals(enactedGovActionID.getGov_action_index(), prevGovActionID.getGov_action_index())
-                && Objects.equals(enactedGovActionID.getTransactionId(), prevGovActionID.getTransactionId());
+        if (prevGovActionID == null) {
+            return false;
+        }
+
+        return Objects.equals(lastEnactedGovActionID.getGov_action_index(), prevGovActionID.getGov_action_index())
+                && Objects.equals(lastEnactedGovActionID.getTransactionId(), prevGovActionID.getTransactionId());
     }
 
     /**

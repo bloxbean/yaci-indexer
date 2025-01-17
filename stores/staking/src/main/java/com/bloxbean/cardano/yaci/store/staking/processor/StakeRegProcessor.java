@@ -82,9 +82,20 @@ public class StakeRegProcessor {
                         stakeRegDeRegs.add(stakeRegistrationDetail);
                         break;
 
-                    case STAKE_DELEGATION:
-                        delegation = buildDelegation((StakeDelegation) certificate, txHash, index, txIndex, eventMetadata);
+                    case STAKE_DELEGATION, STAKE_VOTE_DELEG_CERT:
+                        if (certType == CertificateType.STAKE_VOTE_DELEG_CERT) {
+                            var stakeVoteDelegCert = (StakeVoteDelegCert) certificate;
+                            stakeDelegation = StakeDelegation.builder()
+                                    .stakeCredential(stakeVoteDelegCert.getStakeCredential())
+                                    .stakePoolId(StakePoolId.fromHexPoolId(stakeVoteDelegCert.getPoolKeyHash()))
+                                    .build();
+                        } else {
+                            stakeDelegation = (StakeDelegation) certificate;
+                        }
+
+                        delegation = buildDelegation(stakeDelegation, txHash, index, txIndex, eventMetadata);
                         delegations.add(delegation);
+
                         break;
 
                     case STAKE_REG_DELEG_CERT, STAKE_VOTE_REG_DELEG_CERT:

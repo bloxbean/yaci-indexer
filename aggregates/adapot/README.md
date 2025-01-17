@@ -35,6 +35,7 @@ delete from pool_registration where slot > :slot;
 delete from pool_retirement where slot > :slot;
 delete from protocol_params_proposal where slot > :slot;
 delete from reward where slot > :slot;
+delete from reward_rest where slot > :slot;
 delete from stake_address_balance where slot > :slot;
 delete from stake_registration where slot > :slot;
 delete from transaction where slot > :slot;
@@ -53,6 +54,7 @@ delete from committee_deregistration where slot > :slot;
 delete from committee_member where slot > :slot;
 delete from committee_registration where slot > :slot;
 delete from constitution where slot > :slot;
+delete from voting_procedure where slot > :slot;
 
 
 

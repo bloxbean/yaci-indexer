@@ -6,20 +6,27 @@ import com.bloxbean.cardano.yaci.core.model.governance.VoterType;
 import com.bloxbean.cardano.yaci.store.governance.domain.VotingProcedure;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.jooq.DSLContext;
+import org.jooq.Record;
+import org.jooq.Result;
+import org.jooq.Row2;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import static com.bloxbean.cardano.yaci.store.adapot.jooq.Tables.EPOCH_STAKE;
+import static com.bloxbean.cardano.yaci.store.governance.jooq.Tables.VOTING_PROCEDURE;
+import static com.bloxbean.cardano.yaci.store.governance_aggr.jooq.Tables.DREP_DIST;
+import static org.jooq.impl.DSL.*;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class VotingAggrService {
-    private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final DSLContext dsl;
 
     @Transactional
     public List<VotingProcedure> getVotesBySPO(int epoch, List<GovActionId> govActionIds) {
@@ -27,120 +34,106 @@ public class VotingAggrService {
             return List.of();
         }
 
-        String govActionPairsCondition = govActionIds.stream()
-                .map(id -> "('" + id.getTransactionId() + "', " + id.getGov_action_index() + ")")
-                .collect(Collectors.joining(", "));
+        List<Row2<String, Integer>> govActionPairs = govActionIds.stream()
+                .map(id -> row(id.getTransactionId(), id.getGov_action_index()))
+                .collect(Collectors.toList());
 
-        String sql = """
-            WITH vote_with_max_slot AS (
-                SELECT
-                    vp.voter_hash,
-                    vp.voter_type,
-                    vp.gov_action_tx_hash,
-                    vp.gov_action_index,
-                    MAX(vp.slot) AS max_slot
-                FROM voting_procedure vp
-                WHERE vp.epoch <= :epoch
-                  AND (vp.gov_action_tx_hash, vp.gov_action_index) IN (%s)
-                GROUP BY
-                    vp.voter_hash,
-                    vp.voter_type,
-                    vp.gov_action_tx_hash,
-                    vp.gov_action_index
-            )
-            SELECT vp.*
-            FROM voting_procedure vp
-            JOIN vote_with_max_slot v
-              ON vp.voter_hash = v.voter_hash
-             AND vp.gov_action_tx_hash = v.gov_action_tx_hash
-             AND vp.gov_action_index = v.gov_action_index
-             AND vp.slot = v.max_slot
-            WHERE vp.voter_type = 'STAKING_POOL_KEY_HASH'
-              AND EXISTS (
-                  SELECT 1
-                  FROM epoch_stake es
-                  WHERE es.pool_id = vp.voter_hash
-                    AND es.epoch = :epoch
-              );
-            """.formatted(govActionPairsCondition);
+        var cteQuery = select(
+                VOTING_PROCEDURE.VOTER_HASH.as("voter_hash"),
+                VOTING_PROCEDURE.VOTER_TYPE.as("voter_type"),
+                VOTING_PROCEDURE.GOV_ACTION_TX_HASH.as("gov_action_tx_hash"),
+                VOTING_PROCEDURE.GOV_ACTION_INDEX.as("gov_action_index"),
+                max(VOTING_PROCEDURE.SLOT).as("max_slot")
+        )
+                .from(VOTING_PROCEDURE)
+                .where(VOTING_PROCEDURE.EPOCH.le(epoch))
+                .and(row(VOTING_PROCEDURE.GOV_ACTION_TX_HASH, VOTING_PROCEDURE.GOV_ACTION_INDEX).in(govActionPairs))
+                .and(VOTING_PROCEDURE.VOTER_TYPE.eq("STAKING_POOL_KEY_HASH"))
+                .groupBy(
+                        VOTING_PROCEDURE.VOTER_HASH,
+                        VOTING_PROCEDURE.VOTER_TYPE,
+                        VOTING_PROCEDURE.GOV_ACTION_TX_HASH,
+                        VOTING_PROCEDURE.GOV_ACTION_INDEX
+                );
 
-        Map<String, Object> params = Map.of("epoch", epoch);
+        var voteWithMaxSlot = table(name("vote_with_max_slot"));
 
-        return jdbcTemplate.query(sql, params, (rs, rowNum) -> VotingProcedure.builder()
-                .id(UUID.fromString(rs.getString("id")))
-                .txHash(rs.getString("tx_hash"))
-                .index(rs.getLong("idx"))
-                .slot(rs.getLong("slot"))
-                .voterType(VoterType.STAKING_POOL_KEY_HASH)
-                .voterHash(rs.getString("voter_hash"))
-                .govActionTxHash(rs.getString("gov_action_tx_hash"))
-                .govActionIndex(rs.getInt("gov_action_index"))
-                .vote(Vote.valueOf(rs.getString("vote")))
-                .anchorUrl(rs.getString("anchor_url"))
-                .anchorHash(rs.getString("anchor_hash"))
-                .epoch(rs.getInt("epoch"))
-                .build());
+        var vVoterHash = field(name("vote_with_max_slot", "voter_hash"), String.class);
+        var vGovActionTxHash = field(name("vote_with_max_slot", "gov_action_tx_hash"), String.class);
+        var vGovActionIndex = field(name("vote_with_max_slot", "gov_action_index"), Integer.class);
+        var vMaxSlot = field(name("vote_with_max_slot", "max_slot"), Long.class);
+
+        Result<Record> result = dsl.with("vote_with_max_slot").as(cteQuery)
+                .select(VOTING_PROCEDURE.fields())
+                .from(VOTING_PROCEDURE)
+                .join(voteWithMaxSlot)
+                .on(VOTING_PROCEDURE.VOTER_HASH.eq(vVoterHash)
+                        .and(VOTING_PROCEDURE.GOV_ACTION_TX_HASH.eq(vGovActionTxHash))
+                        .and(VOTING_PROCEDURE.GOV_ACTION_INDEX.eq(vGovActionIndex))
+                        .and(VOTING_PROCEDURE.SLOT.eq(vMaxSlot)))
+                .andExists(
+                        selectOne()
+                                .from(EPOCH_STAKE)
+                                .where(EPOCH_STAKE.POOL_ID.eq(VOTING_PROCEDURE.VOTER_HASH))
+                                .and(EPOCH_STAKE.EPOCH.eq(epoch))
+                )
+                .fetch();
+
+        return mapToVotingProcedures(result);
     }
 
     @Transactional
-    public List<VotingProcedure> getVotesByCommittee(int epoch, List<GovActionId> govActionIds) {
+    public List<VotingProcedure> getVotesByCommittee(int epoch, List<GovActionId> govActionIds, List<String> committeeHotKeys) {
         if (govActionIds == null || govActionIds.isEmpty()) {
             return List.of();
         }
 
-        String govActionPairsCondition = govActionIds.stream()
-                .map(id -> "('" + id.getTransactionId() + "', " + id.getGov_action_index() + ")")
-                .collect(Collectors.joining(", ")); // ('tx_hash1', 0), ('tx_hash2', 1), ...
+        List<Row2<String, Integer>> govActionPairs = govActionIds.stream()
+                .map(id -> row(id.getTransactionId(), id.getGov_action_index()))
+                .collect(Collectors.toList());
 
-        String sql = """
-                WITH vote_with_max_slot AS (
-                    SELECT
-                        vp.voter_hash,
-                        vp.voter_type,
-                        vp.gov_action_tx_hash,
-                        vp.gov_action_index,
-                        MAX(vp.slot) AS max_slot
-                    FROM voting_procedure vp
-                    WHERE vp.epoch <= :epoch
-                      AND (vp.gov_action_tx_hash, vp.gov_action_index) IN (%s)
-                    GROUP BY
-                        vp.voter_hash,
-                        vp.voter_type,
-                        vp.gov_action_tx_hash,
-                        vp.gov_action_index
+        var cteQuery = select(
+                VOTING_PROCEDURE.VOTER_HASH.as("voter_hash"),
+                VOTING_PROCEDURE.VOTER_TYPE.as("voter_type"),
+                VOTING_PROCEDURE.GOV_ACTION_TX_HASH.as("gov_action_tx_hash"),
+                VOTING_PROCEDURE.GOV_ACTION_INDEX.as("gov_action_index"),
+                max(VOTING_PROCEDURE.SLOT).as("max_slot")
+        )
+                .from(VOTING_PROCEDURE)
+                .where(VOTING_PROCEDURE.EPOCH.le(epoch))
+                .and(row(VOTING_PROCEDURE.GOV_ACTION_TX_HASH, VOTING_PROCEDURE.GOV_ACTION_INDEX).in(govActionPairs))
+                .and(VOTING_PROCEDURE.VOTER_TYPE.in(
+                        "CONSTITUTIONAL_COMMITTEE_HOT_SCRIPT_HASH",
+                        "CONSTITUTIONAL_COMMITTEE_HOT_KEY_HASH"
+                ))
+                .and(VOTING_PROCEDURE.VOTER_HASH.in(committeeHotKeys))
+                .groupBy(
+                        VOTING_PROCEDURE.VOTER_HASH,
+                        VOTING_PROCEDURE.VOTER_TYPE,
+                        VOTING_PROCEDURE.GOV_ACTION_TX_HASH,
+                        VOTING_PROCEDURE.GOV_ACTION_INDEX
+                );
+
+        var voteWithMaxSlot = table(name("vote_with_max_slot"));
+
+        var vVoterHash = field(name("vote_with_max_slot", "voter_hash"), String.class);
+        var vGovActionTxHash = field(name("vote_with_max_slot", "gov_action_tx_hash"), String.class);
+        var vGovActionIndex = field(name("vote_with_max_slot", "gov_action_index"), Integer.class);
+        var vMaxSlot = field(name("vote_with_max_slot", "max_slot"), Long.class);
+
+        Result<org.jooq.Record> result = dsl.with("vote_with_max_slot").as(
+                        cteQuery
                 )
-                SELECT vp.*
-                FROM voting_procedure vp
-                JOIN vote_with_max_slot v
-                  ON vp.voter_hash = v.voter_hash
-                 AND vp.gov_action_tx_hash = v.gov_action_tx_hash
-                 AND vp.gov_action_index = v.gov_action_index
-                 AND vp.slot = v.max_slot
-                WHERE vp.voter_type IN ('CONSTITUTIONAL_COMMITTEE_HOT_SCRIPT_HASH', 'CONSTITUTIONAL_COMMITTEE_HOT_KEY_HASH')
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM committee_deregistration cd
-                      WHERE cd.cold_key = vp.voter_hash
-                        AND cd.epoch <= :epoch
-                  );
-                """.formatted(govActionPairsCondition);
+                .select(VOTING_PROCEDURE.fields())
+                .from(VOTING_PROCEDURE)
+                .join(voteWithMaxSlot)
+                .on(VOTING_PROCEDURE.VOTER_HASH.eq(vVoterHash)
+                        .and(VOTING_PROCEDURE.GOV_ACTION_TX_HASH.eq(vGovActionTxHash))
+                        .and(VOTING_PROCEDURE.GOV_ACTION_INDEX.eq(vGovActionIndex))
+                        .and(VOTING_PROCEDURE.SLOT.eq(vMaxSlot)))
+                .fetch();
 
-        Map<String, Object> params = Map.of("epoch", epoch);
-
-        return jdbcTemplate.query(sql, params, (rs, rowNum) -> VotingProcedure.builder()
-                .id(UUID.fromString(rs.getString("id")))
-                .txHash(rs.getString("tx_hash"))
-                .index(rs.getLong("idx"))
-                .slot(rs.getLong("slot"))
-                .voterType(VoterType.valueOf(rs.getString("voter_type")))
-                .voterHash(rs.getString("voter_hash"))
-                .govActionTxHash(rs.getString("gov_action_tx_hash"))
-                .govActionIndex(rs.getInt("gov_action_index"))
-                .vote(rs.getString("vote") != null ? Vote.valueOf(rs.getString("vote")) : null)
-                .anchorUrl(rs.getString("anchor_url"))
-                .anchorHash(rs.getString("anchor_hash"))
-                .epoch(rs.getInt("epoch"))
-                .build());
+        return mapToVotingProcedures(result);
     }
 
     @Transactional
@@ -149,58 +142,68 @@ public class VotingAggrService {
             return List.of();
         }
 
-        String govActionPairsCondition = govActionIds.stream()
-                .map(id -> "('" + id.getTransactionId() + "', " + id.getGov_action_index() + ")")
-                .collect(Collectors.joining(", "));
+        List<Row2<String, Integer>> govActionPairs = govActionIds.stream()
+                .map(id -> row(id.getTransactionId(), id.getGov_action_index()))
+                .collect(Collectors.toList());
 
-        String sql = """
-            WITH vote_with_max_slot AS (
-                SELECT
-                    vp.voter_hash,
-                    vp.voter_type,
-                    vp.gov_action_tx_hash,
-                    vp.gov_action_index,
-                    MAX(vp.slot) AS max_slot
-                FROM voting_procedure vp
-                WHERE vp.epoch <= :epoch
-                  AND (vp.gov_action_tx_hash, vp.gov_action_index) IN (%s)
-                GROUP BY
-                    vp.voter_hash,
-                    vp.voter_type,
-                    vp.gov_action_tx_hash,
-                    vp.gov_action_index
-            )
-            SELECT vp.*
-            FROM voting_procedure vp
-            JOIN vote_with_max_slot v
-              ON vp.voter_hash = v.voter_hash
-             AND vp.gov_action_tx_hash = v.gov_action_tx_hash
-             AND vp.gov_action_index = v.gov_action_index
-             AND vp.slot = v.max_slot
-            WHERE vp.voter_type IN ('DREP_KEY_HASH', 'DREP_SCRIPT_HASH')
-              AND EXISTS (
-                  SELECT 1
-                  FROM drep_dist dd
-                  WHERE dd.drep_hash = vp.voter_hash
-                    AND dd.epoch = :epoch
-              );
-            """.formatted(govActionPairsCondition);
+        var cteQuery = select(
+                VOTING_PROCEDURE.VOTER_HASH.as("voter_hash"),
+                VOTING_PROCEDURE.VOTER_TYPE.as("voter_type"),
+                VOTING_PROCEDURE.GOV_ACTION_TX_HASH.as("gov_action_tx_hash"),
+                VOTING_PROCEDURE.GOV_ACTION_INDEX.as("gov_action_index"),
+                max(VOTING_PROCEDURE.SLOT).as("max_slot")
+        )
+                .from(VOTING_PROCEDURE)
+                .where(VOTING_PROCEDURE.EPOCH.le(epoch))
+                .and(row(VOTING_PROCEDURE.GOV_ACTION_TX_HASH, VOTING_PROCEDURE.GOV_ACTION_INDEX).in(govActionPairs))
+                .and(VOTING_PROCEDURE.VOTER_TYPE.in("DREP_KEY_HASH", "DREP_SCRIPT_HASH"))
+                .groupBy(
+                        VOTING_PROCEDURE.VOTER_HASH,
+                        VOTING_PROCEDURE.VOTER_TYPE,
+                        VOTING_PROCEDURE.GOV_ACTION_TX_HASH,
+                        VOTING_PROCEDURE.GOV_ACTION_INDEX
+                );
 
-        Map<String, Object> params = Map.of("epoch", epoch);
+        var voteWithMaxSlot = table(name("vote_with_max_slot"));
 
-        return jdbcTemplate.query(sql, params, (rs, rowNum) -> VotingProcedure.builder()
-                .id(UUID.fromString(rs.getString("id")))
-                .txHash(rs.getString("tx_hash"))
-                .index(rs.getLong("index"))
-                .slot(rs.getLong("slot"))
-                .voterType(VoterType.valueOf(rs.getString("voter_type")))
-                .voterHash(rs.getString("voter_hash"))
-                .govActionTxHash(rs.getString("gov_action_tx_hash"))
-                .govActionIndex(rs.getInt("gov_action_index"))
-                .vote(Vote.valueOf(rs.getString("vote")))
-                .anchorUrl(rs.getString("anchor_url"))
-                .anchorHash(rs.getString("anchor_hash"))
-                .epoch(rs.getInt("epoch"))
+        var vVoterHash = field(name("vote_with_max_slot", "voter_hash"), String.class);
+        var vGovActionTxHash = field(name("vote_with_max_slot", "gov_action_tx_hash"), String.class);
+        var vGovActionIndex = field(name("vote_with_max_slot", "gov_action_index"), Integer.class);
+        var vMaxSlot = field(name("vote_with_max_slot", "max_slot"), Long.class);
+
+        Result<Record> result = dsl.with("vote_with_max_slot").as(cteQuery)
+                .select(VOTING_PROCEDURE.fields())
+                .from(VOTING_PROCEDURE)
+                .join(voteWithMaxSlot)
+                .on(VOTING_PROCEDURE.VOTER_HASH.eq(vVoterHash)
+                        .and(VOTING_PROCEDURE.GOV_ACTION_TX_HASH.eq(vGovActionTxHash))
+                        .and(VOTING_PROCEDURE.GOV_ACTION_INDEX.eq(vGovActionIndex))
+                        .and(VOTING_PROCEDURE.SLOT.eq(vMaxSlot)))
+                .andExists(
+                        selectOne()
+                                .from(DREP_DIST)
+                                .where(DREP_DIST.DREP_HASH.eq(VOTING_PROCEDURE.VOTER_HASH))
+                                .and(DREP_DIST.EPOCH.eq(epoch))
+                )
+                .fetch();
+
+        return mapToVotingProcedures(result);
+    }
+
+    private List<VotingProcedure> mapToVotingProcedures(Result<Record> result) {
+        return result.map(record -> VotingProcedure.builder()
+                .id(UUID.fromString(record.get(VOTING_PROCEDURE.ID, String.class)))
+                .txHash(record.get(VOTING_PROCEDURE.TX_HASH, String.class))
+                .index(record.get(VOTING_PROCEDURE.IDX, Long.class))
+                .slot(record.get(VOTING_PROCEDURE.SLOT, Long.class))
+                .voterType(VoterType.valueOf(record.get(VOTING_PROCEDURE.VOTER_TYPE, String.class)))
+                .voterHash(record.get(VOTING_PROCEDURE.VOTER_HASH, String.class))
+                .govActionTxHash(record.get(VOTING_PROCEDURE.GOV_ACTION_TX_HASH, String.class))
+                .govActionIndex(record.get(VOTING_PROCEDURE.GOV_ACTION_INDEX, Integer.class))
+                .vote(record.get(VOTING_PROCEDURE.VOTE, String.class) != null ? Vote.valueOf(record.get(VOTING_PROCEDURE.VOTE, String.class)) : null)
+                .anchorUrl(record.get(VOTING_PROCEDURE.ANCHOR_URL, String.class))
+                .anchorHash(record.get(VOTING_PROCEDURE.ANCHOR_HASH, String.class))
+                .epoch(record.get(VOTING_PROCEDURE.EPOCH, Integer.class))
                 .build());
     }
 }

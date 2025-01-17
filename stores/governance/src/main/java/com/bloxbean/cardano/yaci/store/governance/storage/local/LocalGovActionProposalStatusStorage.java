@@ -1,7 +1,7 @@
 package com.bloxbean.cardano.yaci.store.governance.storage.local;
 
 import com.bloxbean.cardano.yaci.store.governance.domain.local.LocalGovActionProposalStatus;
-import com.bloxbean.cardano.yaci.store.governance.storage.impl.model.GovActionStatus;
+import com.bloxbean.cardano.yaci.store.common.domain.GovActionStatus;
 
 import java.util.List;
 
